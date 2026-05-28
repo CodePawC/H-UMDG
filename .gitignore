@@ -1,0 +1,103 @@
+# Python
+**pycache**/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+coverage/
+*.tsbuildinfo
+.venv/
+venv/
+env/
+
+# Packaging
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.next/
+out/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Runtime / generated output
+logs/
+*.log
+tmp/
+temp/
+runtime/
+src/backend/runtime/
+storage/uploads/*
+storage/logs/*
+storage/backups/*
+storage/database/*
+!storage/uploads/
+!storage/logs/
+!storage/backups/
+!storage/database/
+!storage/uploads/.gitkeep
+!storage/logs/.gitkeep
+!storage/backups/.gitkeep
+!storage/database/.gitkeep
+reports/performance/generated/
+reports/performance/H-UDMP-*.json
+reports/performance/H-UDMP-*.md
+reports/performance/*.stdout.log
+reports/performance/*.stderr.log
+reports/security/private/
+
+# Local databases and caches
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+
+# Large or user-provided external source files
+data/samples/external/nhsa/*.xlsx
+!data/samples/external/nhsa/H-UDMP-SAMPLE-*.xlsx
+data/samples/external/nmpa/*.docx
+!data/samples/external/nmpa/H-UDMP-SAMPLE-*.docx
+
+# Local-only automation artifacts
+.codex/
+.cursor/

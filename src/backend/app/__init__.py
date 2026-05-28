@@ -1,0 +1,1 @@
+"""H-UMDG FastAPI application."""

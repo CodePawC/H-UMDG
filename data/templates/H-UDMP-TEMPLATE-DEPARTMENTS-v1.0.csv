@@ -1,0 +1,4 @@
+dept_code,dept_name,dept_alias,parent_dept_code,dept_type,oid,status
+DEPT001,心脏外科,心外科;胸心外科,,临床,1.2.156.xxxxx.1.2.001,ACTIVE
+DEPT002,检验科,LIS检验科,,医技,1.2.156.xxxxx.1.2.002,ACTIVE
+

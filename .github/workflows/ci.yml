@@ -1,0 +1,83 @@
+name: H-UDMP CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: hudmp
+          POSTGRES_USER: hudmp
+          POSTGRES_PASSWORD: hudmp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hudmp -d hudmp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      APP_ENV: test
+      API_KEY: change-me
+      DATABASE_URL: postgresql+psycopg://hudmp:hudmp@localhost:5432/hudmp
+      HUDMP_REPO_ROOT: ${{ github.workspace }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: src/backend/pyproject.toml
+
+      - name: Install backend
+        working-directory: src/backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+
+      - name: Run migrations
+        working-directory: src/backend
+        run: alembic upgrade head
+
+      - name: Run tests
+        working-directory: src/backend
+        run: python -m pytest ../../tests -q
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install frontend
+        working-directory: src/frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: src/frontend
+        run: npm run build

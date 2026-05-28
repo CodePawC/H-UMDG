@@ -1,0 +1,4 @@
+source_system,category,source_key,source_desc,target_code
+SPD,department,SPD-DEPT-001,心外科,DEPT001
+SPD,material,SPD-MAT-001,一次性使用无菌导管 22mm,123456789012345678901234567
+
