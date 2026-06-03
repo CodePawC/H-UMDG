@@ -20,6 +20,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+import sqlalchemy.orm as sa_orm
 
 
 class Base(DeclarativeBase):
@@ -1289,3 +1290,35 @@ class DictEquipmentStandardName(Base):
         Index("idx_equipment_standard_status", "status"),
         Index("idx_equipment_standard_batch", "source_batch_id"),
     )
+
+
+class AppUser(Base):
+    __tablename__ = "app_user"
+    __table_args__ = {"schema": "identity"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(128))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    roles: Mapped[list["UserRole"]] = sa_orm.relationship(
+        "UserRole",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+
+class UserRole(Base):
+    __tablename__ = "user_role"
+    __table_args__ = {"schema": "identity"}
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("identity.app_user.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    role_code: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+    user: Mapped["AppUser"] = sa_orm.relationship("AppUser", back_populates="roles")

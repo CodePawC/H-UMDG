@@ -321,7 +321,7 @@ def test_operator_password_login_returns_session_token() -> None:
 
 
 def test_expired_operator_session_returns_session_error(monkeypatch) -> None:
-    monkeypatch.setenv("OPERATOR_SESSION_TTL_MINUTES", "-1")
+    monkeypatch.setenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "-1")
     get_settings.cache_clear()
     client = TestClient(app)
     login = client.post("/api/v1/auth/login", json={"username": "E1001", "password": "demo123"})

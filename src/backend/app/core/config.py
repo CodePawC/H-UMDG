@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: str = "http://127.0.0.1:5101,http://localhost:5101"
 
+    # JWT（企业级，推荐与 H-MELC 同密钥以实现单点登录）
+    jwt_secret_key: str = "dev-jwt-secret-change-me-in-production-min-32-chars!!"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 480
+
     umdg_repo_root: Path | None = None
     umdg_nhsa_dir: Path | None = None
     umdg_device_catalog_docx: Path | None = None
