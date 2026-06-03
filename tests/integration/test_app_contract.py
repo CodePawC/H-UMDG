@@ -15,6 +15,16 @@ def test_health_endpoint() -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_health_ready_endpoint_reports_dependency_state() -> None:
+    client = TestClient(app)
+    response = client.get("/health/ready")
+    assert response.status_code in {200, 503}
+    body = response.json()
+    assert body["status"] in {"ready", "not_ready"}
+    assert "database" in body["checks"]
+    assert "database_url" in body
+
+
 def test_frontend_origin_can_call_health() -> None:
     client = TestClient(app)
     response = client.options(
@@ -72,6 +82,10 @@ def test_openapi_contains_mvp_paths() -> None:
         "/api/v1/departments/standard-library/sync",
         "/api/v1/departments/{dept_code}/status",
         "/api/v1/materials/search",
+        "/api/v1/materials/statistics",
+        "/api/v1/materials/category-tree",
+        "/api/v1/materials/import-consistency",
+        "/api/v1/materials/master-data/apply-source-rules",
         "/api/v1/materials/import",
         "/api/v1/materials/import/inspect",
         "/api/v1/materials/transcode/resolve",
@@ -332,6 +346,7 @@ def test_operator_password_login_rejects_bad_password() -> None:
 
 def test_import_upload_too_large_returns_error_envelope(monkeypatch) -> None:
     monkeypatch.setenv("HUDMP_IMPORT_MAX_UPLOAD_BYTES", "8")
+    monkeypatch.setenv("UMDG_IMPORT_MAX_UPLOAD_BYTES", "8")
     get_settings.cache_clear()
     client = TestClient(app)
     response = client.post(

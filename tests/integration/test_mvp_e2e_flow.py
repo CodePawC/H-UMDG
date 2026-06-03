@@ -26,6 +26,7 @@ from app.models.tables import (
     ManufacturerVendorMaster,
     ManufacturerVendorRelation,
     ManufacturerVendorRole,
+    MdmExternalMapping,
     RefDeviceClassificationCatalog,
     RefDeviceClassificationRevision,
     StgNhsaMaterialDisabled,
@@ -79,6 +80,7 @@ def _clean_e2e_data() -> None:
                 or_(ManufacturerVendorExternalMapping.external_code.like("PY-E2E-%"), ManufacturerVendorExternalMapping.org_id.in_(vendor_ids))
             )
         )
+        db.execute(delete(MdmExternalMapping).where(MdmExternalMapping.external_code.like("PY-E2E-%")))
         db.execute(delete(ManufacturerVendorCandidate).where(ManufacturerVendorCandidate.source_record_id.like("PY-E2E-%")))
         db.execute(
             delete(ManufacturerVendorRelation).where(
@@ -591,6 +593,8 @@ def test_nhsa_sample_workbooks_import() -> None:
     assert transcode_resp.json()["data"]["transcoded_count"] == 12
     assert transcode_resp.json()["data"]["changed_count"] + transcode_resp.json()["data"]["mapped_count"] == 12
     assert transcode_resp.json()["data"]["failed_count"] == 0
+    assert transcode_resp.json()["data"]["old_code_deprecated_count"] >= 1
+    assert transcode_resp.json()["data"]["new_code_linked_count"] >= 1
 
     SessionLocal = get_session_factory()
     with SessionLocal() as db:
@@ -606,6 +610,25 @@ def test_nhsa_sample_workbooks_import() -> None:
                 "order by row_number limit 1"
             )
         ).mappings().one()
+        applied_new_row = db.execute(
+            text(
+                "select status, original_yb_code_27, code_change_type "
+                "from dict_material_specs "
+                "where yb_code_27=:yb_code_27"
+            ),
+            {"yb_code_27": transcode_row["yb_code_27"]},
+        ).mappings().one()
+        applied_old_row = db.execute(
+            text(
+                "select status, code_change_type "
+                "from dict_material_specs "
+                "where yb_code_27=:yb_code_27"
+            ),
+            {"yb_code_27": transcode_row["original_yb_code_27"]},
+        ).mappings().one()
+    assert applied_new_row["original_yb_code_27"] == transcode_row["original_yb_code_27"]
+    assert applied_new_row["code_change_type"] == transcode_row["change_type"]
+    assert applied_old_row["status"] == "INACTIVE"
 
     resolve_resp = client.get(
         "/api/v1/materials/transcode/resolve",
@@ -623,11 +646,36 @@ def test_nhsa_sample_workbooks_import() -> None:
     assert resolve_data["items"][0]["change_type"] == transcode_row["change_type"]
 
     preview_resp = client.get(
-        "/api/v1/materials/search?source_batch_id=PY-E2E-NHSA-FULL-001&status=",
+        "/api/v1/materials/search?source_batch_id=PY-E2E-NHSA-FULL-001&status=&page_size=500",
         headers=HEADERS,
     )
     assert preview_resp.status_code == 200
     assert preview_resp.json()["data"]["page"]["total"] == 12
+    assert preview_resp.json()["data"]["page"]["page_size"] == 500
+    assert any(row["status"] == "INACTIVE" for row in preview_resp.json()["data"]["items"])
+    assert any(row["original_yb_code_27"] for row in preview_resp.json()["data"]["items"])
+
+    consistency_resp = client.get(
+        "/api/v1/materials/import-consistency?source_type=NHSA_FULL_SPEC&batch_id=PY-E2E-NHSA-FULL-001",
+        headers=HEADERS,
+    )
+    assert consistency_resp.status_code == 200
+    consistency = consistency_resp.json()["data"]
+    assert consistency["status"] == "CONSISTENT"
+    assert consistency["staging_unique_key_count"] == 12
+    assert consistency["master_unique_key_count"] == 12
+
+    apply_resp = client.post("/api/v1/materials/master-data/apply-source-rules", headers=HEADERS)
+    assert apply_resp.status_code == 200
+    assert apply_resp.json()["data"]["status"] == "APPLIED"
+    assert apply_resp.json()["data"]["summary"]["transcode_applied_count"] >= 1
+
+    statistics_resp = client.get("/api/v1/materials/statistics", headers=HEADERS)
+    assert statistics_resp.status_code == 200
+    statistics = statistics_resp.json()["data"]
+    assert statistics["total_count"] >= 12
+    assert statistics["disabled_applied_count"] >= 12
+    assert statistics["transcode_applied_count"] >= 1
 
     not_found_resp = client.get(
         "/api/v1/materials/transcode/resolve",
