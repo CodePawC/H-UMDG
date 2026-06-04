@@ -29,8 +29,39 @@ def login_operator(payload: LoginRequest) -> ApiEnvelope:
             status_code=401,
             detail={"code": "UNAUTHORIZED", "message": "username or password is invalid"},
         )
-    permissions = sorted(ROLE_PERMISSIONS.get(account.role, set()))
+
     session_token, session_expires_at = issue_session_token(account)
+
+    if isinstance(account, dict):
+        # 统一身份模式：来自 DictPerson
+        systems = account.get("systems", {})
+        all_roles: list[str] = []
+        for sys_info in systems.values():
+            all_roles.extend(sys_info.get("roles", []))
+        permissions = set()
+        for r in all_roles:
+            permissions.update(ROLE_PERMISSIONS.get(r, set()))
+        return ApiEnvelope(
+            data={
+                "operator_name": account.get("person_code") or account.get("login_account", ""),
+                "operator_display_name": account.get("display_name") or account.get("person_name", ""),
+                "operator_role": all_roles[0] if all_roles else "",
+                "person_id": account.get("person_id", ""),
+                "person_name": account.get("person_name", ""),
+                "department_name": account.get("department_name", ""),
+                "position": account.get("position", ""),
+                "systems": systems,
+                "permissions": sorted(permissions),
+                "auth_model": "unified_person",
+                "access_token": session_token,
+                "token_type": "bearer",
+                "session_token": session_token,
+                "session_expires_at": format_session_expiry(session_expires_at),
+            }
+        )
+
+    # 传统模式：OperatorAccount
+    permissions = sorted(ROLE_PERMISSIONS.get(account.role, set()))
     return ApiEnvelope(
         data={
             "operator_name": account.username,

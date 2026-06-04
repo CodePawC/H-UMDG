@@ -3,6 +3,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from datetime import date as date_type
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -165,6 +167,10 @@ class DictPerson(Base):
     email: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'ACTIVE'"))
     login_account: Mapped[str | None] = mapped_column(String(100))
+    password_hash: Mapped[str | None] = mapped_column(String(255))  # 统一身份：登录凭据
+    employment_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'ACTIVE'"))  # ACTIVE / RESIGNED / RETIRED
+    onboard_date: Mapped[date | None] = mapped_column(Date)  # 入职日期
+    offboard_date: Mapped[date | None] = mapped_column(Date)  # 离职日期
     external_user_id: Mapped[str | None] = mapped_column(String(100))
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     remark: Mapped[str | None] = mapped_column(Text())
@@ -179,6 +185,7 @@ class DictPerson(Base):
         Index("idx_dict_persons_department", "department_id"),
         Index("idx_dict_persons_campus", "campus_id"),
         Index("idx_dict_persons_status", "status"),
+        Index("idx_dict_persons_login_account", "login_account"),
     )
 
 

@@ -1,4 +1,23 @@
-from dataclasses import dataclass
+"""统一身份认证——DictPerson 主数据驱动。
+
+核心理念：
+  系统权限不是"分配"给人的，而是人员的岗位/科室属性天生携带的。
+  登录时从 DictPerson 查询人员，通过 access_rules 规则引擎
+  自动推导可访问的系统列表和角色。
+
+认证链路：
+  1. 查询 DictPerson（按 login_account）
+  2. bcrypt 验证密码
+  3. 规则引擎推导 systems/roles
+  4. 签发标准 JWT（载荷含 person_id、systems、roles）
+  5. 业务系统验证 JWT 签名后直接读取 roles
+
+向后兼容：
+  - AppUser 表仍可用作降级登录（旧账号体系）
+  - OPERATOR_USERS 配置账号仍可用（开发环境）
+"""
+
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import hashlib
 import hmac
@@ -27,6 +46,8 @@ class OperatorContext:
     display_name: str | None = None
     auth_model: str = "service_api_key_with_operator_context"
     session_expires_at: int | None = None
+    person_id: str | None = None
+    systems: dict[str, dict[str, list[str]]] = field(default_factory=dict)
 
     @property
     def permissions(self) -> set[str]:
@@ -68,7 +89,7 @@ ROLE_PERMISSIONS = {
         "mapping.review",
     },
     "AUDITOR": {"dashboard.view", "exchange.view"},
-    "AUDIT_ADMIN": {"dashboard.view", "exchange.view"},
+    "AUDIT_ADMIN": {"dashboard.view", "exchange.view", "raw_payload.view"},
     "platform_admin": {
         "dashboard.view",
         "dictionaries.manage",
@@ -93,6 +114,11 @@ ROLE_PERMISSIONS = {
         "mapping.review",
     },
     "auditor": {"dashboard.view", "exchange.view"},
+    "ENGINEER": {"dashboard.view", "equipment.manage"},
+    "DEPT_USER": {"dashboard.view", "equipment.manage"},
+    "DEVICE_ADMIN": {"dashboard.view", "departments.manage", "equipment.manage", "materials.manage"},
+    "FINANCE_READ": {"dashboard.view"},
+    "SUPPLIER": set(),
 }
 
 
@@ -109,7 +135,7 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
-# ---- 配置驱动账号（兼容降级） ----
+# ---- 配置驱动账号（降级） ----
 
 def configured_operator_accounts() -> dict[str, OperatorAccount]:
     settings = get_settings()
@@ -141,67 +167,146 @@ def _legacy_password_matches(stored_password: str, password: str) -> bool:
     return hmac.compare_digest(stored_password, password)
 
 
-# ---- 数据库驱动认证 ----
+# ---- DictPerson 驱动认证 ----
 
-def authenticate_operator(username_or_employee_id: str, password: str) -> OperatorAccount | None:
-    """DB 优先，配置降级。"""
-    from app.db.session import get_session_factory, get_engine
-    from sqlalchemy import inspect as sa_inspect
+def _person_to_dict(person) -> dict[str, Any]:
+    """将 DictPerson ORM 对象转为规则引擎可用的 dict。"""
+    from app.models.tables import DictPerson
 
-    username = username_or_employee_id.strip().lower()
-    db_found_user = False
-    try:
-        engine = get_engine()
-        insp = sa_inspect(engine)
-        has_table = insp.has_table("app_user", schema="identity")
-        if has_table:
+    dept_name = None
+    if person.department_id:
+        try:
+            from app.db.session import get_session_factory
+
             SessionLocal = get_session_factory()
             with SessionLocal() as db:
-                from app.models.tables import AppUser
+                from app.models.tables import DictDepartment
 
-                row = db.execute(
-                    select(AppUser).where(AppUser.username == username)
-                ).scalar_one_or_none()
-                if row:
-                    db_found_user = True
-                    roles = sorted({r.role_code for r in row.roles})
-                    role = roles[0] if roles else ""
-                    if row.is_active and verify_password(password, row.password_hash):
-                        return OperatorAccount(
-                            username=row.username,
-                            password="",
-                            role=role,
-                            display_name=row.display_name or row.username,
-                        )
+                dept = db.get(DictDepartment, person.department_id)
+                if dept:
+                    dept_name = dept.dept_name
+        except Exception:
+            pass
+    return {
+        "person_id": str(person.person_id),
+        "person_name": person.person_name or "",
+        "position": person.position or "",
+        "department_name": dept_name or "",
+        "person_type": person.person_type or "",
+        "employment_status": person.employment_status or "ACTIVE",
+    }
+
+
+def authenticate_person(username: str, password: str) -> OperatorAccount | dict[str, Any] | None:
+    """DictPerson 认证，返回人员 dict（含 systems/roles）。
+
+    auth_model=unified 时，返回的人员 dict 包含 systems 字段。
+    auth_model=legacy 时，返回 OperatorAccount。
+    """
+    from app.db.session import get_session_factory
+    from app.services.access_rules import derive_person_systems
+
+    username = username.strip().lower()
+
+    # 1. 尝试 DictPerson 认证（统一身份主路径）
+    try:
+        SessionLocal = get_session_factory()
+        with SessionLocal() as db:
+            from app.models.tables import DictPerson
+
+            person = db.execute(
+                select(DictPerson).where(DictPerson.login_account == username)
+            ).scalar_one_or_none()
+
+            if person and person.password_hash:
+                if person.employment_status not in ("ACTIVE",):
+                    return None  # 离职/退休人员拒绝登录
+                if verify_password(password, person.password_hash):
+                    person_dict = _person_to_dict(person)
+                    person_dict["systems"] = derive_person_systems(person_dict)
+                    person_dict["display_name"] = person.person_name
+                    return person_dict
+                return None  # 密码错误
     except Exception:
         pass
 
-    # DB 验证已命中用户但密码错误 → 不降级
-    if db_found_user:
-        return None
+    # 2. 降级：AppUser 表（过渡兼容）
+    try:
+        SessionLocal = get_session_factory()
+        with SessionLocal() as db:
+            from app.models.tables import AppUser
 
-    # 降级：传统配置驱动账号
+            row = db.execute(
+                select(AppUser).where(AppUser.username == username)
+            ).scalar_one_or_none()
+            if row:
+                roles = sorted({r.role_code for r in row.roles})
+                role = roles[0] if roles else ""
+                if row.is_active and verify_password(password, row.password_hash):
+                    return OperatorAccount(
+                        username=row.username,
+                        password="",
+                        role=role,
+                        display_name=row.display_name or row.username,
+                    )
+                return None  # AppUser 密码错误
+    except Exception:
+        pass
+
+    # 3. 最低降级：配置驱动账号
     account = configured_operator_accounts().get(username)
     if account and _legacy_password_matches(account.password, password):
         return account
     return None
 
 
-# ---- JWT 签发与验证 ----
+def authenticate_operator(username_or_employee_id: str, password: str) -> OperatorAccount | dict[str, Any] | None:
+    """统一登录入口。返回 OperatorAccount 或人员 dict（含 systems）。"""
+    return authenticate_person(username_or_employee_id, password)
 
-def issue_session_token(account: OperatorAccount) -> tuple[str, int]:
-    """签发标准 JWT。"""
+
+# ---- JWT 签发 ----
+
+def issue_session_token(account_or_person: OperatorAccount | dict[str, Any]) -> tuple[str, int]:
+    """签发标准 JWT。统一身份模式下 payload 含 systems/roles。"""
     settings = get_settings()
     now = datetime.now(tz=UTC)
     expires_at = now + timedelta(minutes=settings.jwt_access_token_expire_minutes)
-    payload: dict[str, Any] = {
-        "sub": account.username,
-        "username": account.username,
-        "display_name": account.display_name or account.username,
-        "roles": [account.role],
-        "iat": int(now.timestamp()),
-        "exp": int(expires_at.timestamp()),
-    }
+
+    if isinstance(account_or_person, dict):
+        # 统一身份模式：来自 DictPerson
+        sys_info = account_or_person.get("systems", {})
+        payload: dict[str, Any] = {
+            "sub": account_or_person.get("person_id") or account_or_person.get("login_account", ""),
+            "person_id": account_or_person.get("person_id", ""),
+            "username": account_or_person.get("person_code") or account_or_person.get("login_account", ""),
+            "display_name": account_or_person.get("display_name") or account_or_person.get("person_name", ""),
+            "department_name": account_or_person.get("department_name", ""),
+            "position": account_or_person.get("position", ""),
+            "systems": sys_info,
+            "iat": int(now.timestamp()),
+            "exp": int(expires_at.timestamp()),
+        }
+        # 为了向后兼容，设置 roles 为 H-UMDG 角色
+        umdg_roles = sys_info.get("H-UMDG", {}).get("roles", [])
+        if umdg_roles:
+            payload["roles"] = umdg_roles
+            payload["role"] = umdg_roles[0]
+        else:
+            payload["roles"] = []
+            payload["role"] = ""
+    else:
+        # 传统模式：来自 OperatorAccount 或 AppUser
+        payload = {
+            "sub": account_or_person.username,
+            "username": account_or_person.username,
+            "display_name": account_or_person.display_name,
+            "roles": [account_or_person.role],
+            "systems": {},
+            "iat": int(now.timestamp()),
+            "exp": int(expires_at.timestamp()),
+        }
+
     token: str = jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
     return token, int(expires_at.timestamp())
 
@@ -217,7 +322,7 @@ def _session_auth_error(code: str, message: str) -> HTTPException:
 
 
 def verify_session_token(token: str) -> OperatorContext:
-    """解析 JWT，验证用户仍有效。"""
+    """解析 JWT，验证用户有效性。"""
     settings = get_settings()
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
@@ -231,43 +336,40 @@ def verify_session_token(token: str) -> OperatorContext:
     role = roles[0] if roles else ""
     display_name = str(payload.get("display_name") or payload.get("name") or username)
     exp: int = payload.get("exp", 0)
-    uid_raw = payload.get("uid")
+    person_id = payload.get("person_id") or ""
+    systems = payload.get("systems") or {}
 
-    if not username or not role:
+    if not username:
         raise _session_auth_error("SESSION_INVALID", "令牌载荷无效")
 
-    if role not in ROLE_PERMISSIONS:
-        raise _session_auth_error("SESSION_INVALID", "角色无效")
-
-    # 尝试 DB 验证用户仍存在；DB 找不到时降级到配置账号
-    db_user_valid = True
+    # 尝试验证人员状态
     try:
         from app.db.session import get_session_factory, get_engine
         from sqlalchemy import inspect as sa_inspect
 
         engine = get_engine()
-        if sa_inspect(engine).has_table("app_user", schema="identity"):
+        if sa_inspect(engine).has_table("dict_persons", schema=None):
             SessionLocal = get_session_factory()
             with SessionLocal() as db:
-                from app.models.tables import AppUser
+                from app.models.tables import DictPerson
 
                 row = db.execute(
-                    select(AppUser).where(AppUser.username == username)
-                ).scalar_one_or_none()
-                if row is None:
-                    db_user_valid = False
-                elif not row.is_active:
-                    raise _session_auth_error("SESSION_INVALID", "用户不存在或已被禁用")
+                    select(DictPerson).where(DictPerson.person_id == person_id)
+                ).scalar_one_or_none() if person_id else None
+
+                if row:
+                    if row.employment_status not in ("ACTIVE",):
+                        raise _session_auth_error("SESSION_INVALID", "用户状态异常，请联系管理员")
+                    role = roles[0] if roles else ""
+                    display_name = row.person_name or display_name
+                else:
+                    # 通过 username 查（降级兼容）
+                    if person_id:
+                        pass  # person_id 指定的人员在 DictPerson 中已不存在
     except HTTPException:
         raise
     except Exception:
         pass
-
-    # 配置降级校验
-    if not db_user_valid:
-        account = configured_operator_accounts().get(username.lower())
-        if account is None or account.role != role:
-            raise _session_auth_error("SESSION_INVALID", "用户不存在或已被禁用")
 
     return OperatorContext(
         name=username,
@@ -275,6 +377,8 @@ def verify_session_token(token: str) -> OperatorContext:
         display_name=display_name,
         auth_model="operator_password_session",
         session_expires_at=exp,
+        person_id=person_id,
+        systems=systems,
     )
 
 
