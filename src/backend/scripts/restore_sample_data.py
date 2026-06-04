@@ -3,6 +3,12 @@
 用法：
     cd src/backend
     python scripts/restore_sample_data.py
+
+说明：
+    - NHSA 医保耗材样本从 xlsx 恢复（已在仓库中）
+    - 医疗器械分类目录需要 docx 源文件，不在仓库中
+      如有请放入 data/samples/external/nmpa/医疗器械分类目录.docx
+    - 幂等，已有数据时跳过
 """
 
 import sys
