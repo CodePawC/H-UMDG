@@ -21,19 +21,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://umdg:umdg@localhost:5432/umdg"
     redis_url: str = "redis://localhost:6379/0"
     api_key: str = "change-me"
-    operator_session_ttl_minutes: int = 480
-    operator_users: str = (
-        "admin|admin123|platform_admin|平台管理员;"
-        "E1001|demo123|data_steward|数据治理员;"
-        "AUD001|audit123|auditor|审计员"
-    )
-    log_level: str = "INFO"
-    cors_origins: str = "http://127.0.0.1:5101,http://localhost:5101"
-
-    # JWT（企业级，推荐与 H-MELC 同密钥以实现单点登录）
     jwt_secret_key: str = "dev-jwt-secret-change-me-in-production-min-32-chars!!"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 480
+    log_level: str = "INFO"
+    cors_origins: str = "http://127.0.0.1:5101,http://localhost:5101"
 
     umdg_repo_root: Path | None = None
     umdg_nhsa_dir: Path | None = None

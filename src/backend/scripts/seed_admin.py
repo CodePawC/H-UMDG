@@ -43,10 +43,10 @@ def seed_admin(username: str = "admin", password: str = "admin123", display_name
                 {"u": username},
             ).fetchone()
             if existing:
-                print(f"人员 '{username}' 已存在（dict_persons），更新密码")
+                print(f"人员 '{username}' 已存在（dict_persons），更新密码和信息")
                 conn.execute(
-                    text("UPDATE dict_persons SET password_hash = :p WHERE login_account = :u"),
-                    {"p": pw_hash, "u": username},
+                    text("UPDATE dict_persons SET password_hash = :p, person_code = :c, person_name = :n WHERE login_account = :u"),
+                    {"p": pw_hash, "c": username, "n": display_name, "u": username},
                 )
             else:
                 pid = str(uuid.uuid4())

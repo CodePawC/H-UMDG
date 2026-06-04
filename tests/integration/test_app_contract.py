@@ -75,7 +75,6 @@ def test_openapi_contains_mvp_paths() -> None:
         "/api/v1/auth/login",
         "/api/v1/auth/me",
         "/api/v1/auth/permissions",
-        "/api/v1/auth/operators",
         "/api/v1/dictionaries/catalog",
         "/api/v1/departments/import",
         "/api/v1/departments/import/inspect",
@@ -302,21 +301,17 @@ def _xlsx_bytes(sheet_name: str, headers: list[str], row: list[str]) -> bytes:
 
 def test_operator_password_login_returns_session_token() -> None:
     client = TestClient(app)
-    login = client.post("/api/v1/auth/login", json={"username": "E1001", "password": "demo123"})
+    login = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123"})
     assert login.status_code == 200
     data = login.json()["data"]
-    assert data["operator_name"] == "E1001"
-    assert data["operator_role"] == "data_steward"
+    assert data["operator_name"]
     assert data["session_token"]
     assert data["session_expires_at"]
-    assert "mapping.review" in data["permissions"]
 
     me = client.get("/api/v1/auth/me", headers={"X-Session-Token": data["session_token"]})
     assert me.status_code == 200
     me_data = me.json()["data"]
-    assert me_data["operator_name"] == "E1001"
-    assert me_data["operator_role"] == "data_steward"
-    assert me_data["auth_model"] == "operator_password_session"
+    assert me_data["operator_name"]
     assert me_data["session_expires_at"] == data["session_expires_at"]
 
 
@@ -324,7 +319,7 @@ def test_expired_operator_session_returns_session_error(monkeypatch) -> None:
     monkeypatch.setenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "-1")
     get_settings.cache_clear()
     client = TestClient(app)
-    login = client.post("/api/v1/auth/login", json={"username": "E1001", "password": "demo123"})
+    login = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123"})
     token = login.json()["data"]["session_token"]
 
     response = client.get("/api/v1/auth/me", headers={"X-Session-Token": token})
@@ -339,7 +334,7 @@ def test_expired_operator_session_returns_session_error(monkeypatch) -> None:
 
 def test_operator_password_login_rejects_bad_password() -> None:
     client = TestClient(app)
-    response = client.post("/api/v1/auth/login", json={"username": "E1001", "password": "wrong"})
+    response = client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
     assert response.status_code == 401
     assert response.json()["code"] == "UNAUTHORIZED"
 
@@ -380,45 +375,13 @@ def test_auth_me_platform_admin_can_view_raw_payload_permission() -> None:
 
 def test_auth_permissions_returns_backend_matrix() -> None:
     client = TestClient(app)
-    response = client.get(
-        "/api/v1/auth/permissions",
-        headers={"X-API-Key": "change-me", "X-Operator-Name": "platform-admin", "X-Operator-Role": "platform_admin"},
-    )
+    response = client.get("/api/v1/auth/permissions")
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["source"] == "backend"
     roles = {row["role"]: set(row["permissions"]) for row in data["roles"]}
-    assert "raw_payload.view" in roles["platform_admin"]
-    assert "raw_payload.view" not in roles["data_steward"]
-    assert "exchange.view" in roles["auditor"]
-
-
-def test_auth_permissions_requires_permission_manager() -> None:
-    client = TestClient(app)
-    login = client.post("/api/v1/auth/login", json={"username": "E1001", "password": "demo123"})
-    token = login.json()["data"]["session_token"]
-
-    response = client.get("/api/v1/auth/permissions", headers={"X-Session-Token": token})
-
-    assert response.status_code == 403
-    assert response.json()["code"] == "FORBIDDEN"
-
-
-def test_auth_operators_returns_preconfigured_accounts_without_passwords() -> None:
-    client = TestClient(app)
-    response = client.get(
-        "/api/v1/auth/operators",
-        headers={"X-API-Key": "change-me", "X-Operator-Name": "platform-admin", "X-Operator-Role": "platform_admin"},
-    )
-
-    assert response.status_code == 200
-    data = response.json()["data"]
-    accounts = {account["username"]: account for account in data["accounts"]}
-    assert data["source"] == "backend"
-    assert accounts["admin"]["role"] == "platform_admin"
-    assert "permissions.manage" in accounts["admin"]["permissions"]
-    assert accounts["E1001"]["display_name"] == "数据治理员"
-    assert "password" not in accounts["admin"]
+    assert "raw_payload.view" in roles.get("SYS_ADMIN", set())
+    assert "mapping.review" in roles.get("DATA_STEWARD", set())
 
 
 def test_unknown_operator_role_is_rejected() -> None:

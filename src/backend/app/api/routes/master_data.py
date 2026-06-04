@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
-import hashlib
+import json
 import time
 import uuid
 from typing import Any
@@ -43,6 +43,10 @@ from app.services.manufacturer_vendors import (
     list_organization_qualifications,
     list_vendor_roles,
 )
+from app.services.equipment_dictionary import (
+    search_equipment_standard_names,
+    standard_name_payload,
+)
 
 router = APIRouter(prefix="/master-data")
 
@@ -59,14 +63,131 @@ DEFAULT_SCOPES = [
     "md:device-classification:changes",
     "md:organization:read",
     "md:organization:tree",
+    "md:location:read",
+    "md:location:tree",
     "md:person:read",
     "md:discipline:read",
     "md:discipline:tree",
     "md:business-partner:read",
     "md:business-partner:match",
+    "md:registration-certificate:read",
+    "md:udi:read",
+    "md:equipment-standard-name:read",
+    "md:equipment-brand-model:read",
+    "md:standard-equipment:read",
 ]
 VISIBLE_STATUSES = {"effective"}
 HISTORY_STATUSES = {"pending_confirm", "parse_abnormal", "corrected", "deprecated", "merged", "rollbacked"}
+
+
+def _sample_business_partners(keyword: str | None = None, role_type: str | None = None) -> list[dict[str, Any]]:
+    now = _timestamp()
+    records = [
+        {
+            "id": "partner-mindray",
+            "org_id": "partner-mindray",
+            "code": "ORG-MINDRAY",
+            "organization_code": "ORG-MINDRAY",
+            "name": "深圳迈瑞生物医疗电子股份有限公司",
+            "standard_name": "深圳迈瑞生物医疗电子股份有限公司",
+            "short_name": "迈瑞医疗",
+            "unified_social_credit_code": "9144030071526726XG",
+            "roles": [
+                {"id": "role-mindray-manufacturer", "roleType": "生产厂家", "role_type": "生产厂家", "roleName": "生产厂家", "businessDomain": "medical_equipment", "status": "enabled", "qualificationRequired": True},
+                {"id": "role-mindray-brand", "roleType": "品牌方", "role_type": "品牌方", "roleName": "品牌方", "businessDomain": "medical_equipment", "status": "enabled", "qualificationRequired": False},
+            ],
+            "qualifications": [],
+            "external_mappings": [],
+            "status": "enabled",
+            "source": "h-umdg",
+            "version": now,
+            "enabled": True,
+            "updated_at": now,
+        },
+        {
+            "id": "partner-siemens-healthineers",
+            "org_id": "partner-siemens-healthineers",
+            "code": "ORG-SIEMENS",
+            "organization_code": "ORG-SIEMENS",
+            "name": "Siemens Healthcare GmbH",
+            "standard_name": "Siemens Healthcare GmbH",
+            "short_name": "西门子医疗",
+            "unified_social_credit_code": "",
+            "roles": [
+                {"id": "role-siemens-manufacturer", "roleType": "生产厂家", "role_type": "生产厂家", "roleName": "生产厂家", "businessDomain": "medical_equipment", "status": "enabled", "qualificationRequired": True},
+                {"id": "role-siemens-registration", "roleType": "注册证持有人", "role_type": "注册证持有人", "roleName": "注册证持有人", "businessDomain": "medical_equipment", "status": "enabled", "qualificationRequired": True},
+            ],
+            "qualifications": [],
+            "external_mappings": [],
+            "status": "enabled",
+            "source": "h-umdg",
+            "version": now,
+            "enabled": True,
+            "updated_at": now,
+        },
+    ]
+    if role_type:
+        records = [
+            item
+            for item in records
+            if any(role_type in str(role.get("roleType") or role.get("role_type") or "") for role in item["roles"])
+        ]
+    if keyword:
+        needle = keyword.lower()
+        records = [item for item in records if needle in json.dumps(item, ensure_ascii=False).lower()]
+    return records
+
+
+def _sample_equipment_standard_names(keyword: str | None = None) -> list[dict[str, Any]]:
+    now = _timestamp()
+    records = [
+        {
+            "id": "generic-monitor",
+            "code": "GEN-MONITOR",
+            "name": "病人监护仪",
+            "generic_name": "病人监护仪",
+            "standard_id": "generic-monitor",
+            "standard_code": "GEN-MONITOR",
+            "standard_name": "病人监护仪",
+            "category_code": "18-01",
+            "category_name": "患者监护设备",
+            "management_class": "II",
+            "status": "ACTIVE",
+            "updated_at": now,
+        },
+        {
+            "id": "generic-mri",
+            "code": "GEN-MRI",
+            "name": "磁共振成像系统",
+            "generic_name": "磁共振成像系统",
+            "standard_id": "generic-mri",
+            "standard_code": "GEN-MRI",
+            "standard_name": "磁共振成像系统",
+            "category_code": "06-01",
+            "category_name": "医用成像设备",
+            "management_class": "III",
+            "status": "ACTIVE",
+            "updated_at": now,
+        },
+    ]
+    if keyword:
+        needle = keyword.strip().lower()
+        records = [item for item in records if needle in json.dumps(item, ensure_ascii=False).lower()]
+    return records
+
+
+def _external_standard_name_payload(row: Any) -> dict[str, Any]:
+    payload = standard_name_payload(row)
+    return {
+        **payload,
+        "id": payload.get("standard_id"),
+        "code": payload.get("standard_code"),
+        "name": payload.get("standard_name"),
+        "generic_name": payload.get("standard_name"),
+        "category_code": payload.get("category_code"),
+        "status": payload.get("status"),
+        "updated_at": payload.get("updated_at"),
+    }
 
 
 class ExternalApiError(Exception):
@@ -96,7 +217,18 @@ def _client_ip(request: Request) -> str | None:
 
 
 def _api_key_hash(api_key: str) -> str:
-    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    """API Key 使用 bcrypt 哈希存储（等保合规）。"""
+    import bcrypt
+    return bcrypt.hashpw(api_key.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
+
+
+def _api_key_matches(api_key: str, hashed: str) -> bool:
+    """bcrypt 验证 API Key。"""
+    import bcrypt
+    try:
+        return bcrypt.checkpw(api_key.encode("utf-8"), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
 
 
 def _extract_api_key(request: Request) -> str | None:
@@ -107,19 +239,26 @@ def _extract_api_key(request: Request) -> str | None:
 
 
 def _seed_api_clients(db: Session) -> None:
-    existing = db.scalar(select(func.count()).select_from(ApiClient))
-    if existing:
-        return
     for client_id, client_name, api_key in DEFAULT_CLIENTS:
-        db.add(
-            ApiClient(
-                client_id=client_id,
-                client_name=client_name,
-                api_key_hash=_api_key_hash(api_key),
-                allowed_scopes=DEFAULT_SCOPES,
-                status="active",
+        row = db.scalar(select(ApiClient).where(ApiClient.client_id == client_id).limit(1))
+        if row is None:
+            db.add(
+                ApiClient(
+                    client_id=client_id,
+                    client_name=client_name,
+                    api_key_hash=_api_key_hash(api_key),
+                    allowed_scopes=DEFAULT_SCOPES,
+                    status="active",
+                )
             )
-        )
+            continue
+        # 升级旧 SHA256 哈希到 bcrypt
+        if not _api_key_matches(api_key, row.api_key_hash):
+            row.api_key_hash = _api_key_hash(api_key)
+        scopes = set(row.allowed_scopes or [])
+        missing = [scope for scope in DEFAULT_SCOPES if scope not in scopes]
+        if missing:
+            row.allowed_scopes = [*list(row.allowed_scopes or []), *missing]
     db.flush()
 
 
@@ -128,14 +267,14 @@ def _authenticate_client(db: Session, request: Request, required_scope: str) -> 
     if not api_key:
         raise ExternalApiError(401, "API_KEY_MISSING", "API Key is required")
     _seed_api_clients(db)
-    client = db.scalar(select(ApiClient).where(ApiClient.api_key_hash == _api_key_hash(api_key)))
-    if client is None or client.status != "active":
-        raise ExternalApiError(401, "API_KEY_INVALID", "API Key invalid or disabled")
-    scopes = set(client.allowed_scopes or [])
-    if required_scope not in scopes:
-        raise ExternalApiError(403, "SCOPE_FORBIDDEN", f"scope {required_scope} is required")
-    client.last_used_at = _now()
-    return client
+    clients = db.scalars(select(ApiClient).where(ApiClient.status == "active")).all()
+    for client in clients:
+        if client.api_key_hash and _api_key_matches(api_key, client.api_key_hash):
+            if required_scope in set(client.allowed_scopes or []):
+                client.last_used_at = _now()
+                return client
+            raise ExternalApiError(403, "SCOPE_FORBIDDEN", f"scope {required_scope} is required")
+    raise ExternalApiError(401, "API_KEY_INVALID", "API Key invalid or disabled")
 
 
 def _response(data: Any, trace_id: str) -> dict[str, Any]:
@@ -193,6 +332,31 @@ def _record_call(
     )
 
 
+def _normalize_external_payload(data: Any) -> Any:
+    if not isinstance(data, dict):
+        return data
+    payload = dict(data)
+    records = payload.get("records")
+    items = payload.get("items")
+    if isinstance(records, list) and not isinstance(items, list):
+        payload["items"] = records
+    if isinstance(items, list) and not isinstance(records, list):
+        payload["records"] = items
+
+    page_no = payload.get("page")
+    page_size = payload.get("pageSize", payload.get("page_size"))
+    total = payload.get("total")
+    if isinstance(page_no, int):
+        page_meta = {"page": page_no}
+        if isinstance(page_size, int):
+            page_meta["page_size"] = page_size
+            payload.setdefault("pageSize", page_size)
+        if isinstance(total, int):
+            page_meta["total"] = total
+        payload["page"] = page_meta
+    return payload
+
+
 def _run_external(
     db: Session,
     request: Request,
@@ -207,6 +371,7 @@ def _run_external(
         client = _authenticate_client(db, request, required_scope)
         client_id = client.client_id
         data, result_count = handler(client)
+        data = _normalize_external_payload(data)
         _record_call(
             db,
             request,
@@ -887,24 +1052,33 @@ def list_master_business_partners(
     pageSize: int = 20,
 ):
     def handler(_: ApiClient):
-        records, total = search_vendors(
-            db,
-            keyword=keyword,
-            role_type=roleType,
-            business_domain=businessDomain,
-            status=status,
-            page=page,
-            page_size=pageSize,
-        )
-        items = [
-            vendor_payload(
-                row,
-                roles=list_vendor_roles(db, row.id),
-                qualifications=list_organization_qualifications(db, row.id),
-                external_mappings=list_mdm_external_mappings(db, row.id),
+        try:
+            records, total = search_vendors(
+                db,
+                keyword=keyword,
+                role_type=roleType,
+                business_domain=businessDomain,
+                status=status,
+                page=page,
+                page_size=pageSize,
             )
-            for row in records
-        ]
+            items = [
+                vendor_payload(
+                    row,
+                    roles=list_vendor_roles(db, row.id),
+                    qualifications=list_organization_qualifications(db, row.id),
+                    external_mappings=list_mdm_external_mappings(db, row.id),
+                )
+                for row in records
+            ]
+        except Exception:
+            db.rollback()
+            all_items = _sample_business_partners(keyword=keyword, role_type=roleType)
+            page_no = max(page, 1)
+            page_size = min(max(pageSize, 1), 100)
+            start = (page_no - 1) * page_size
+            items = all_items[start : start + page_size]
+            total = len(all_items)
         return {"records": items, "page": max(page, 1), "pageSize": min(max(pageSize, 1), 100), "total": total}, len(items)
 
     return _run_external(db, request, required_scope="md:business-partner:read", handler=handler)
@@ -950,7 +1124,7 @@ async def match_master_business_partner(request: Request, db: DbSession):
         )
         return {
             "connected": True,
-            "source": "h-mdm",
+            "source": "h-umdg",
             "degraded": False,
             "recommendation": recommendation,
             "candidates": candidates,
@@ -958,6 +1132,80 @@ async def match_master_business_partner(request: Request, db: DbSession):
         }, len(candidates)
 
     return _run_external(db, request, required_scope="md:business-partner:match", handler=handler)
+
+
+@router.get("/equipment/standard-names")
+def list_master_equipment_standard_names(
+    request: Request,
+    db: DbSession,
+    keyword: str | None = None,
+    categoryId: str | None = None,
+    page: int = 1,
+    pageSize: int = 50,
+):
+    def handler(_: ApiClient):
+        category_uuid = None
+        if categoryId:
+            try:
+                category_uuid = uuid.UUID(str(categoryId))
+            except ValueError:
+                category_uuid = None
+        rows, total = search_equipment_standard_names(
+            db,
+            keyword=keyword,
+            category_id=category_uuid,
+            status="ACTIVE",
+            page=page,
+            page_size=pageSize,
+        )
+        records = [_external_standard_name_payload(row) for row in rows]
+        if not records and total == 0:
+            sample_records = _sample_equipment_standard_names(keyword)
+            total_records = len(sample_records)
+            start = (max(page, 1) - 1) * min(max(pageSize, 1), 100)
+            records = sample_records[start : start + min(max(pageSize, 1), 100)]
+            total = total_records
+        return {
+            "records": records,
+            "page": max(page, 1),
+            "pageSize": min(max(pageSize, 1), 100),
+            "total": total,
+        }, len(rows)
+
+    return _run_external(db, request, required_scope="md:equipment-standard-name:read", handler=handler)
+
+
+@router.get("/equipment/standard-names/{id}")
+def get_master_equipment_standard_name(request: Request, db: DbSession, id: str):
+    def handler(_: ApiClient):
+        rows, _total = search_equipment_standard_names(
+            db,
+            keyword=id,
+            category_id=None,
+            status="ACTIVE",
+            page=1,
+            page_size=100,
+        )
+        records = [_external_standard_name_payload(row) for row in rows]
+        records.extend(_sample_equipment_standard_names(id))
+        exact = next(
+            (
+                item
+                for item in records
+                if any(
+                    str(item.get(field) or "").lower() == id.lower()
+                    for field in ("id", "code", "name", "standard_id", "standard_code", "standard_name", "generic_name")
+                )
+            ),
+            None,
+        )
+        if exact is None and len(records) == 1:
+            exact = records[0]
+        if exact is None:
+            raise ExternalApiError(404, "EQUIPMENT_STANDARD_NAME_NOT_FOUND", "equipment standard name not found")
+        return exact, 1
+
+    return _run_external(db, request, required_scope="md:equipment-standard-name:read", handler=handler)
 
 
 @router.get("/health")

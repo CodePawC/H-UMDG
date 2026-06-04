@@ -35,4 +35,3 @@ VendorManageAuth = Annotated[OperatorContext, Depends(require_permission("vendor
 ImportManageAuth = Annotated[OperatorContext, Depends(require_permission("imports.manage"))]
 MappingReviewAuth = Annotated[OperatorContext, Depends(require_permission("mapping.review"))]
 ExchangeViewAuth = Annotated[OperatorContext, Depends(require_permission("exchange.view"))]
-PermissionsManageAuth = Annotated[OperatorContext, Depends(require_permission("permissions.manage"))]
