@@ -1329,3 +1329,91 @@ class UserRole(Base):
     role_code: Mapped[str] = mapped_column(String(64), primary_key=True)
 
     user: Mapped["AppUser"] = sa_orm.relationship("AppUser", back_populates="roles")
+
+
+class MdmSpaceLocation(Base):
+    __tablename__ = "space_location"
+    __table_args__ = {"schema": "mdm"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    code: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("mdm.space_location.id", ondelete="SET NULL"))
+    short_name: Mapped[str | None] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class MdmRegistrationCertificate(Base):
+    __tablename__ = "registration_certificate"
+    __table_args__ = {"schema": "mdm"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    registration_no: Mapped[str] = mapped_column(String(100), nullable=False)
+    product_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    generic_name: Mapped[str | None] = mapped_column(String(200))
+    brand: Mapped[str | None] = mapped_column(String(200))
+    model: Mapped[str | None] = mapped_column(String(200))
+    holder_name: Mapped[str | None] = mapped_column(String(200))
+    valid_to: Mapped[str | None] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class MdmUdi(Base):
+    __tablename__ = "udi"
+    __table_args__ = {"schema": "mdm"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    di: Mapped[str] = mapped_column(String(100), nullable=False)
+    product_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    generic_name: Mapped[str | None] = mapped_column(String(200))
+    brand: Mapped[str | None] = mapped_column(String(200))
+    model: Mapped[str | None] = mapped_column(String(200))
+    registration_no: Mapped[str | None] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class MdmEquipmentBrandModel(Base):
+    __tablename__ = "equipment_brand_model"
+    __table_args__ = {"schema": "mdm"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code: Mapped[str | None] = mapped_column(String(100))
+    brand: Mapped[str] = mapped_column(String(200), nullable=False)
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    generic_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    standard_name: Mapped[str | None] = mapped_column(String(200))
+    manufacturer_name: Mapped[str | None] = mapped_column(String(200))
+    registration_no: Mapped[str | None] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class MdmStandardEquipment(Base):
+    __tablename__ = "standard_equipment"
+    __table_args__ = {"schema": "mdm"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    generic_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    category_code: Mapped[str | None] = mapped_column(String(100))
+    category_name: Mapped[str | None] = mapped_column(String(200))
+    management_class: Mapped[str | None] = mapped_column(String(20))
+    brand: Mapped[str | None] = mapped_column(String(200))
+    model: Mapped[str | None] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
