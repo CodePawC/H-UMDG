@@ -7,6 +7,7 @@
 - **项目概述**：`docs/README.md`、`docs/PROJECT-OVERVIEW.md`
 - **需求与范围**：`docs/SCOPE.md`、`docs/02-requirements/H-UDMP-RTM-v1.0.md`
 - **架构设计**：`docs/03-architecture/H-UDMP-ARCHITECTURE-MVP-v1.0.md`
+- **前端架构**：`docs/03-architecture/H-UMDG-前端架构设计.md`（视觉风格/技术栈/组件库/目录结构/样式系统/实施计划）
 - **API 规格**：`docs/04-api/H-UDMP-API-SPEC-v1.0.md`、`docs/API.md`
 - **数据模型**：`docs/05-data/H-UDMP-DATA-MODEL-v1.0.md`、`docs/DATA-MODEL.md`
 - **测试与验收**：`docs/06-testing/`、`tests/README.md`、`docs/UAT-CHECKLIST.md`
