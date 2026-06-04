@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from app.api.deps import ApiKeyAuth, DbSession, EquipmentManageAuth
 from app.api.schemas import ApiEnvelope, PageMeta, PagedResult
@@ -59,6 +60,7 @@ from app.models.tables import (
     DeviceClassificationImportValidationResult,
     DeviceClassificationSourceFile,
     DeviceClassificationCatalogVersion,
+    DictEquipmentStandardName,
     RefDeviceClassificationCatalog,
     SysImportBatch,
 )
@@ -72,6 +74,24 @@ EQUIPMENT_SOURCE_TYPES = {
     "EQUIPMENT_STANDARD_NAME",
     "DEVICE_CLASSIFICATION_CATALOG",
 }
+
+
+class EquipmentStandardNameIn(BaseModel):
+    standard_code: str | None = None
+    standard_name: str
+    alias_names: list[str] = Field(default_factory=list)
+    category_id: uuid.UUID | None = None
+    device_classification_id: uuid.UUID | None = None
+    common_manufacturer_org_ids: list[str] = Field(default_factory=list)
+    management_class: str | None = None
+    source_system: str | None = "H-UMDG"
+    source_batch_id: str | None = None
+    status: str = "ACTIVE"
+    remark: str | None = None
+
+
+class EquipmentStandardNameStatusIn(BaseModel):
+    status: str
 
 DEVICE_CLASSIFICATION_STANDARD_SOURCE = "国家药监局《医疗器械分类目录》（2017年第104号）"
 IMPORT_STATUS_LABELS = {
@@ -120,7 +140,7 @@ def _client_ip(request: Request) -> str | None:
 def _operator_department(operator_name: str | None) -> str:
     if not operator_name:
         return "未识别"
-    return "数据治理中心"
+    return "主数据中心"
 
 
 def _status_label(status: str | None) -> str:
@@ -161,7 +181,7 @@ def _upsert_device_import_batch(
     user_agent: str | None = None,
 ) -> None:
     row = db.get(SysImportBatch, batch_id)
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     result_payload = {
         **(row.result_payload or {} if row else {}),
         **(artifact or {}),
@@ -433,6 +453,95 @@ def list_equipment_standard_names(
             page=PageMeta(page=max(page, 1), page_size=min(max(page_size, 1), 100), total=total),
         )
     )
+
+
+@router.post("/equipment/standard-names", response_model=ApiEnvelope)
+def upsert_equipment_standard_name(
+    payload: EquipmentStandardNameIn,
+    _: EquipmentManageAuth,
+    db: DbSession,
+) -> ApiEnvelope:
+    standard_name = payload.standard_name.strip()
+    if not standard_name:
+        raise HTTPException(status_code=422, detail={"code": "VALIDATION_FAILED", "message": "standard_name is required"})
+    standard_code = (payload.standard_code or "").strip() or f"EQ-{uuid.uuid5(uuid.NAMESPACE_DNS, standard_name).hex[:12].upper()}"
+    row = db.scalar(
+        select(DictEquipmentStandardName).where(
+            (DictEquipmentStandardName.standard_code == standard_code)
+            | (DictEquipmentStandardName.standard_name == standard_name)
+        )
+    )
+    if row is None:
+        row = DictEquipmentStandardName(standard_code=standard_code, standard_name=standard_name)
+        db.add(row)
+    row.standard_name = standard_name
+    row.alias_names = payload.alias_names
+    row.category_id = payload.category_id
+    row.device_classification_id = payload.device_classification_id
+    row.common_manufacturer_org_ids = payload.common_manufacturer_org_ids
+    row.management_class = payload.management_class
+    row.source_system = payload.source_system or "H-UMDG"
+    row.source_batch_id = payload.source_batch_id
+    row.status = payload.status.strip().upper() or "ACTIVE"
+    row.remark = payload.remark
+    db.commit()
+    db.refresh(row)
+    return ApiEnvelope(data=standard_name_payload(row))
+
+
+@router.patch("/equipment/standard-names/{standard_id}", response_model=ApiEnvelope)
+def patch_equipment_standard_name(
+    standard_id: uuid.UUID,
+    payload: EquipmentStandardNameIn,
+    _: EquipmentManageAuth,
+    db: DbSession,
+) -> ApiEnvelope:
+    row = db.get(DictEquipmentStandardName, standard_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail={"code": "EQUIPMENT_STANDARD_NAME_NOT_FOUND", "message": "设备标准名称不存在"})
+    row.standard_name = payload.standard_name.strip()
+    row.alias_names = payload.alias_names
+    row.category_id = payload.category_id
+    row.device_classification_id = payload.device_classification_id
+    row.common_manufacturer_org_ids = payload.common_manufacturer_org_ids
+    row.management_class = payload.management_class
+    row.source_system = payload.source_system or row.source_system
+    row.source_batch_id = payload.source_batch_id
+    row.status = payload.status.strip().upper() or row.status
+    row.remark = payload.remark
+    db.commit()
+    db.refresh(row)
+    return ApiEnvelope(data=standard_name_payload(row))
+
+
+@router.patch("/equipment/standard-names/{standard_id}/status", response_model=ApiEnvelope)
+def patch_equipment_standard_name_status(
+    standard_id: uuid.UUID,
+    payload: EquipmentStandardNameStatusIn,
+    _: EquipmentManageAuth,
+    db: DbSession,
+) -> ApiEnvelope:
+    row = db.get(DictEquipmentStandardName, standard_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail={"code": "EQUIPMENT_STANDARD_NAME_NOT_FOUND", "message": "设备标准名称不存在"})
+    row.status = payload.status.strip().upper() or row.status
+    db.commit()
+    db.refresh(row)
+    return ApiEnvelope(data=standard_name_payload(row))
+
+
+@router.delete("/equipment/standard-names/{standard_id}", response_model=ApiEnvelope)
+def delete_equipment_standard_name(
+    standard_id: uuid.UUID,
+    _: EquipmentManageAuth,
+    db: DbSession,
+) -> ApiEnvelope:
+    row = db.get(DictEquipmentStandardName, standard_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail={"code": "EQUIPMENT_STANDARD_NAME_NOT_FOUND", "message": "设备标准名称不存在"})
+    db.delete(row)
+    db.commit()
+    return ApiEnvelope(data={"deleted": 1, "id": str(standard_id)})
 
 
 @router.get("/equipment/device-classifications", response_model=ApiEnvelope)
