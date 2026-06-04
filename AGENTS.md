@@ -12,7 +12,7 @@
 - **测试与验收**：`docs/06-testing/`、`tests/README.md`、`docs/UAT-CHECKLIST.md`
 - **部署运维**：`docs/07-operations/H-UDMP-DEPLOYMENT-RUNBOOK-v1.0.md`
 - **外部对接**：`docs/master-data-api-integration.md`（H-MELC 等消费方集成指引）
-- **统一身份方案（迭代目标）**：`docs/08-architecture/主数据驱动统一身份与权限管理方案.md`
+- **统一身份方案（第一阶段已实现）**：`docs/08-architecture/主数据驱动统一身份与权限管理方案.md`
 - **工作区集成**：`D:/wlxph/README.md`、`D:/wlxph/docs/05-系统边界与集成关系说明.md`
 
 ## 项目状态
