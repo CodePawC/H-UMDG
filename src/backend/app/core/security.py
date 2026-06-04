@@ -189,6 +189,8 @@ def _person_to_dict(person) -> dict[str, Any]:
             pass
     return {
         "person_id": str(person.person_id),
+        "person_code": person.person_code or "",
+        "login_account": person.login_account or "",
         "person_name": person.person_name or "",
         "position": person.position or "",
         "department_name": dept_name or "",
