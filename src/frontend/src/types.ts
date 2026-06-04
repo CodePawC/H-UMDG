@@ -60,13 +60,111 @@ export type MaterialRow = {
   filer_org_id?: string | null;
   yb_code_27?: string | null;
   yb_code_20?: string | null;
+  goods_id?: string | null;
+  udi?: string | null;
+  original_yb_code_27?: string | null;
+  original_code_status?: string | null;
+  code_change_type?: string | null;
   generic_name?: string | null;
+  brand_name?: string | null;
   cat_level_1?: string | null;
   cat_level_2?: string | null;
   cat_level_3?: string | null;
+  material_attr?: string | null;
+  feature?: string | null;
+  spec_value?: string | null;
+  spec_unit?: string | null;
+  model_detail?: string | null;
   reg_number?: string | null;
+  insurance_generic_name_code?: string | null;
+  insurance_generic_name?: string | null;
   status: string;
   source_batch_id?: string | null;
+  updated_at?: string | null;
+};
+
+export type MaterialCategoryStatistic = {
+  name: string;
+  count: number;
+};
+
+export type MaterialCategoryTreeNode = {
+  key: string;
+  level: 1 | 2 | 3;
+  name: string;
+  title: string;
+  count: number;
+  cat_level_1?: string | null;
+  cat_level_2?: string | null;
+  cat_level_3?: string | null;
+  children: MaterialCategoryTreeNode[];
+};
+
+export type MaterialCategoryTreeResult = {
+  items: MaterialCategoryTreeNode[];
+  total_count: number;
+};
+
+export type MaterialImportBatchSummary = {
+  batch_id: string;
+  source_type: string;
+  source_system?: string | null;
+  source_file_name?: string | null;
+  sheet_name?: string | null;
+  status: string;
+  source_row_count: number;
+  unique_key_count: number;
+  success_count: number;
+  failed_count: number;
+  skipped_duplicate_count?: number;
+  created_at?: string | null;
+  finished_at?: string | null;
+};
+
+export type MaterialStatistics = {
+  total_count: number;
+  active_count: number;
+  inactive_count: number;
+  status_counts: Record<string, number>;
+  top_categories: MaterialCategoryStatistic[];
+  full_spec_staging_count: number;
+  full_spec_master_count?: number;
+  disabled_staging_count: number;
+  disabled_applied_count: number;
+  disabled_unmatched_count: number;
+  transcode_staging_count: number;
+  transcode_old_deprecated_count: number;
+  transcode_new_linked_count: number;
+  transcode_applied_count: number;
+  transcode_unresolved_count: number;
+  latest_batches: MaterialImportBatchSummary[];
+};
+
+export type MaterialConsistency = {
+  source_type: string;
+  batch?: MaterialImportBatchSummary | null;
+  batch_id?: string | null;
+  status: "CONSISTENT" | "NEEDS_ATTENTION" | string;
+  source_row_count?: number | null;
+  import_success_count?: number | null;
+  staging_row_count?: number;
+  staging_unique_key_count?: number;
+  master_row_count?: number;
+  master_unique_key_count?: number;
+  missing_master_count?: number;
+  missing_master_samples?: string[];
+  applied_to_master_count?: number;
+  unapplied_count?: number;
+  unresolved_count?: number;
+};
+
+export type MaterialSourceRuleApplyResult = {
+  status: string;
+  disabled_batch_id?: string | null;
+  transcode_batch_id?: string | null;
+  disabled: Record<string, number>;
+  transcode: Record<string, number>;
+  summary?: Partial<MaterialStatistics>;
 };
 
 export type DictionaryCatalogField = {
@@ -125,9 +223,19 @@ export type ImportReport = {
   failed_count: number;
   duplicate_count?: number;
   disabled_count?: number;
+  disabled_master_target_count?: number;
+  disabled_master_applied_count?: number;
+  disabled_master_unmatched_count?: number;
   transcoded_count?: number;
   changed_count?: number;
   mapped_count?: number;
+  old_code_deprecated_count?: number;
+  new_code_linked_count?: number;
+  transcode_master_target_count?: number;
+  transcode_master_applied_count?: number;
+  transcode_master_unresolved_count?: number;
+  old_code_not_found_count?: number;
+  new_code_not_found_count?: number;
   retained_count?: number;
   failures?: ImportFailure[];
   source_file?: EquipmentSourceFile | null;
@@ -536,6 +644,20 @@ export type EquipmentStandardName = {
   updated_at?: string | null;
 };
 
+export type EquipmentStandardNameInput = {
+  standard_code?: string | null;
+  standard_name: string;
+  alias_names?: string[];
+  category_id?: string | null;
+  device_classification_id?: string | null;
+  common_manufacturer_org_ids?: string[];
+  management_class?: string | null;
+  source_system?: string | null;
+  source_batch_id?: string | null;
+  status?: string;
+  remark?: string | null;
+};
+
 export type DeviceClassification = {
   catalog_id: string;
   batch_id: string;
@@ -911,6 +1033,13 @@ export type UserSession = {
   sessionExpiresAt?: string;
   backendPermissions?: PermissionKey[];
   authModel?: string;
+  // 统一身份扩展字段
+  personId?: string;
+  personName?: string;
+  departmentName?: string;
+  position?: string;
+  systems?: Record<string, { roles: string[] }>;
+  accessToken?: string;
 };
 
 export type AuthContext = {
@@ -921,6 +1050,14 @@ export type AuthContext = {
   auth_model: string;
   session_token?: string;
   session_expires_at?: string;
+  // 统一身份扩展字段
+  person_id?: string;
+  person_name?: string;
+  department_name?: string;
+  position?: string;
+  systems?: Record<string, { roles: string[] }>;
+  access_token?: string;
+  token_type?: string;
 };
 
 export type PermissionMatrix = {

@@ -83,7 +83,13 @@ export function loadSession(): UserSession | null {
       sessionToken: parsed.sessionToken,
       sessionExpiresAt: parsed.sessionExpiresAt,
       backendPermissions: parsed.backendPermissions,
-      authModel: parsed.authModel
+      authModel: parsed.authModel,
+      personId: parsed.personId,
+      personName: parsed.personName,
+      departmentName: parsed.departmentName,
+      position: parsed.position,
+      systems: parsed.systems,
+      accessToken: parsed.accessToken,
     };
   } catch {
     clearSession();
