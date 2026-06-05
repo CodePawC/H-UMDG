@@ -73,6 +73,7 @@ import { EquipmentDictionaryWorkbench } from "./components/EquipmentDictionaryWo
 import { EquipmentBrandModelWorkbench } from "./components/EquipmentBrandModelWorkbench";
 import { EquipmentRegistrationUdiWorkbench } from "./components/EquipmentRegistrationUdiWorkbench";
 import { DeviceClassificationExportWorkbench } from "./components/DeviceClassificationExportWorkbench";
+import { DeviceClassificationImportWorkbench } from "./components/DeviceClassificationImportWorkbench";
 import { EvidenceWorkbench } from "./components/EvidenceWorkbench";
 import { ExchangeLogWorkbench } from "./components/ExchangeLogWorkbench";
 import { GlobalFooterBar } from "./components/GlobalFooterBar";
@@ -482,6 +483,13 @@ const navItems: NavigationItem[] = [
     id: "device-classification-export",
     label: "医疗器械分类目录导出",
     description: "按主数据导出任务生成目录文件、导出记录和审计日志",
+    status: "ready",
+    permission: "equipment.manage"
+  },
+  {
+    id: "device-classification-import",
+    label: "分类目录导入",
+    description: "上传NMPA标准文件导入医疗器械分类目录",
     status: "ready",
     permission: "equipment.manage"
   },
@@ -3606,6 +3614,7 @@ function App() {
   const showEquipmentBrandModel = ["equipment-brand-model", "standard-equipment-library"].includes(activeId);
   const showEquipmentDictionary = ["equipment-category", "equipment-standard-name", "device-classification"].includes(activeId);
   const showDeviceClassificationExport = activeId === "device-classification-export";
+  const showDeviceClassificationImport = activeId === "device-classification-import";
   const equipmentView =
     activeId === "equipment-standard-name"
       ? "standard-names"
@@ -3800,6 +3809,10 @@ function App() {
                   onBack={() => selectNavigation("device-classification")}
                   onApiActivity={recordApiActivity}
                 />
+              </ExistingModulePage>
+            ) : showDeviceClassificationImport ? (
+              <ExistingModulePage activeId={activeId} fullHeight>
+                <DeviceClassificationImportWorkbench client={client} />
               </ExistingModulePage>
             ) : showEquipmentRegistrationUdi ? (
               <ExistingModulePage activeId={activeId} fullHeight>
