@@ -10,6 +10,7 @@ from app.api.routes.equipment import external_router as equipment_external_route
 from app.api.routes.manufacturer_vendors import external_router as manufacturer_vendor_external_router
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.core.ratelimit import RateLimitMiddleware
 from app.db.session import get_engine
 
 
@@ -58,6 +59,9 @@ def create_app() -> FastAPI:
             return response
 
     app.add_middleware(_SecurityHeadersMiddleware)
+
+    # 速率限制（暴力破解防护）：登录 10次/分钟，API 120次/分钟
+    app.add_middleware(RateLimitMiddleware)
 
     app.include_router(api_router)
     app.include_router(equipment_external_router, tags=["external-equipment"])
