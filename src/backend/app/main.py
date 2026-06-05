@@ -1,12 +1,16 @@
-from fastapi import FastAPI, HTTPException, Request
+from urllib.parse import urlparse, urlunparse
+
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.routes.equipment import external_router as equipment_external_router
 from app.api.routes.manufacturer_vendors import external_router as manufacturer_vendor_external_router
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.db.session import get_engine
 
 
 def _error_payload(code: str, message: str, trace_id: str | None = None) -> dict[str, str | bool | None]:
@@ -38,6 +42,23 @@ def create_app() -> FastAPI:
                 "Content-Type",
             ],
         )
+
+    class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+        """生产安全响应头（等保合规）。"""
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                "connect-src 'self' ws: wss:; font-src 'self' data:; frame-ancestors 'none'"
+            )
+            return response
+
+    app.add_middleware(_SecurityHeadersMiddleware)
+
     app.include_router(api_router)
     app.include_router(equipment_external_router, tags=["external-equipment"])
     app.include_router(manufacturer_vendor_external_router, tags=["external-manufacturer-vendors"])
@@ -70,10 +91,65 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok", "service": "h-umdg-backend", "version": settings.api_version_label}
 
+    @app.get("/health/ready")
+    def health_ready() -> JSONResponse:
+        checks: dict[str, str] = {}
+        ok = True
+
+        try:
+            from sqlalchemy import text
+
+            engine = get_engine()
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            checks["database"] = "ok"
+            checks["alembic_version"] = _probe_alembic_revision(engine)
+        except Exception as exc:
+            checks["database"] = f"error:{exc!s}"[:200]
+            ok = False
+
+        payload = {
+            "status": "ready" if ok else "not_ready",
+            "checks": checks,
+            "database_url": _sanitize_database_url(settings.database_url),
+        }
+        code = status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE
+        return JSONResponse(status_code=code, content=payload)
+
     return app
 
 
 app = create_app()
+
+
+def _sanitize_database_url(database_url: str) -> str:
+    if "@" not in database_url or database_url.startswith("sqlite"):
+        return database_url
+    try:
+        parsed = urlparse(database_url)
+        if not parsed.password:
+            return database_url
+        netloc = f"{parsed.username}:***@{parsed.hostname}"
+        if parsed.port:
+            netloc += f":{parsed.port}"
+        return urlunparse((parsed.scheme, netloc, parsed.path or "", "", parsed.query or "", ""))
+    except ValueError:
+        return "<invalid database_url>"
+
+
+def _probe_alembic_revision(engine) -> str:
+    if engine.dialect.name != "postgresql":
+        return "n/a"
+    try:
+        from sqlalchemy import text
+
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT version_num FROM alembic_version ORDER BY version_num DESC LIMIT 1")
+            ).fetchone()
+        return row[0] if row else "empty"
+    except Exception:
+        return "unavailable"
 
 
 def run_dev() -> None:

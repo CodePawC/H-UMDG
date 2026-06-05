@@ -96,7 +96,7 @@ def seed_admin(username: str = "admin", password: str = "admin123", display_name
                     )
                 print(f"账号 '{username}' 创建成功（identity.app_user，角色: SYS_ADMIN, AUDIT_ADMIN）")
 
-    print(f"\n用户 '{username}' 就绪。登录账号同用户名，密码为 {password}")
+    print(f"\n用户 '{username}' 就绪。使用设置的密码登录。")
 
 
 if __name__ == "__main__":
